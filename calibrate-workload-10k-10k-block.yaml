@@ -93,4 +93,4 @@ spec:
   resources:
     requests:
       storage: 28Gi
-  storageClassName: ebs-sc-block
+  # storageClassName: ebs-sc-block

@@ -75,7 +75,7 @@ spec:
   resources:
     requests:
       storage: 32Gi
-  storageClassName: ebs-sc
+  # storageClassName: ebs-sc
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -148,4 +148,4 @@ spec:
   resources:
     requests:
       storage: 32Gi
-  storageClassName: ebs-sc
+  # storageClassName: ebs-sc
