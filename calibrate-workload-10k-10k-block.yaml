@@ -67,7 +67,13 @@ spec:
         image: docker.io/ubuntu:latest
         imagePullPolicy: IfNotPresent
         securityContext: 
-          privileged: true
+          allowPrivilegeEscalation: false
+          capabilities: 
+            drop: 
+            - "ALL"
+          runAsNonRoot: true 
+          seccompProfile: 
+            type: "RuntimeDefault"
         name: workload-calibrate-1-container
         resources:
           requests:

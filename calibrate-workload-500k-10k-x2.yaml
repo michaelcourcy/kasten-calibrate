@@ -56,6 +56,14 @@ spec:
           requests:
             cpu: 1
             memory: 1Gi
+        securityContext: 
+          allowPrivilegeEscalation: false
+          capabilities: 
+            drop: 
+            - "ALL"
+          runAsNonRoot: true 
+          seccompProfile: 
+            type: "RuntimeDefault"
         volumeMounts:
         - mountPath: /data
           name: data      
