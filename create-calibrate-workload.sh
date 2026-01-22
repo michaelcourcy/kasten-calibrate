@@ -321,10 +321,8 @@ spec:
 EOF
 )
     if [ -n "$STORAGE_CLASS" ]; then
-        MANIFEST+=$(cat <<EOF
-  storageClassName: $STORAGE_CLASS
-EOF
-)
+        MANIFEST+="
+  storageClassName: $STORAGE_CLASS"
     fi
 else
     MANIFEST+=$(cat <<EOF
@@ -342,10 +340,8 @@ spec:
 EOF
 )
     if [ -n "$STORAGE_CLASS" ]; then
-        MANIFEST+=$(cat <<EOF
-  storageClassName: $STORAGE_CLASS
-EOF
-)
+        MANIFEST+="
+  storageClassName: $STORAGE_CLASS"
     fi
 fi
 
