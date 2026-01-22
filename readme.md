@@ -21,7 +21,7 @@ This script creates Kubernetes deployments that generate and maintain file syste
 
 1. Clone or download the script:
 ```bash
-curl -O https://raw.githubusercontent.com/your-repo/kasten-calibrate/main/create-calibrate-workload.sh
+curl -O https://raw.githubusercontent.com/michaelcourcy/kasten-calibrate/refs/heads/main/create-calibrate-workload.sh
 chmod +x create-calibrate-workload.sh
 ```
 
