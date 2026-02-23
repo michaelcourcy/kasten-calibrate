@@ -205,6 +205,119 @@ kubectl delete deployment workload-calibrate-10k-10kb -n test-calibrate
 kubectl delete pvc calibrate-10k-10kb -n test-calibrate
 ```
 
+## Exploring PVCs (explore-pvc.sh)
+
+The `explore-pvc.sh` script creates a lightweight explorer pod to mount and inspect any PVC in your cluster. This is useful for verifying workload data, checking file contents, troubleshooting issues, or exploring restored PVCs.
+
+### Usage
+
+```bash
+./explore-pvc.sh [options]
+```
+
+### Options
+
+| Option | Description | Required |
+|--------|-------------|----------|
+| `-n, --namespace` | Namespace where PVC exists (default: current context namespace) | No |
+| `-p, --pvc` | Name of the PVC to mount | Yes |
+| `-u, --user` | User ID to run as (sets runAsUser and fsGroup) | No |
+| `-d, --dry-run` | Display manifest without applying | No |
+| `-h, --help` | Show help message | No |
+
+### Security Features
+
+The explorer pod runs with restrictive security settings:
+- Non-root user (UID 1000 by default)
+- No privilege escalation
+- All capabilities dropped
+- RuntimeDefault seccomp profile
+- Optional fsGroup (only when `-u` is specified to avoid ownership changes on large filesystems)
+
+### Examples
+
+**Explore a calibrate workload PVC:**
+```bash
+./explore-pvc.sh -p calibrate-100k-500kb
+```
+
+**Explore PVC in specific namespace:**
+```bash
+./explore-pvc.sh -n test-calibrate -p calibrate-10k-10kb
+```
+
+**Explore with specific user ID:**
+```bash
+./explore-pvc.sh -n prod-test -p data-pvc -u 1000
+```
+
+**Preview manifest:**
+```bash
+./explore-pvc.sh -p my-data-pvc -d
+```
+
+### Accessing the Explorer Pod
+
+After the pod is created, access it with:
+```bash
+kubectl exec -it -n <namespace> <pod-name> -- sh
+```
+
+The script automatically provides this command in the output.
+
+### Common Tasks
+
+**List files in the PVC:**
+```bash
+kubectl exec -n <namespace> <pod-name> -- ls -lh /data
+```
+
+**Count files:**
+```bash
+kubectl exec -n <namespace> <pod-name> -- sh -c "ls -1 /data/*.bin 2>/dev/null | wc -l"
+```
+
+**Check disk usage:**
+```bash
+kubectl exec -n <namespace> <pod-name> -- df -h /data
+```
+
+**Verify file contents:**
+```bash
+kubectl exec -n <namespace> <pod-name> -- head -c 100 /data/1.v1.bin | od -A x -t x1z
+```
+
+**Check churn pattern (compare v1 vs v2 timestamps):**
+```bash
+kubectl exec -n <namespace> <pod-name> -- sh -c "ls -l /data/1.v*.bin"
+```
+
+### Cleanup
+
+**Delete the explorer pod:**
+```bash
+kubectl delete pod <pod-name> -n <namespace>
+```
+
+The script outputs the exact cleanup command after pod creation.
+
+### Pod Naming Convention
+
+Explorer pods are automatically named based on the PVC:
+- Format: `explore-<pvc-name>[-N]`
+- Examples:
+  - `explore-calibrate-10k-10kb`
+  - `explore-calibrate-100k-500kb`
+  - `explore-my-data-pvc-2` (second instance)
+
+### Notes
+
+- The explorer pod remains running until manually deleted
+- Multiple explorer pods can be created for the same PVC (with automatic name suffixing)
+- The pod uses minimal resources (100m CPU, 128Mi memory)
+- Data is mounted at `/data` inside the pod
+- By default, `fsGroup` is not set to avoid ownership changes on large filesystems (can cause mount delays)
+
 ## Use Cases
 
 ### Backup Testing
