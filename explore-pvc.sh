@@ -258,7 +258,7 @@ EOF
 )
 fi
 
-# Container command, init containers, and extra volumes differ in restore-point mode
+# Container command and extra volumes differ in restore-point mode
 if [ -n "$RESTORE_POINT_NAME" ]; then
     CONTAINER_COMMAND=$(cat <<EOF
     command:
