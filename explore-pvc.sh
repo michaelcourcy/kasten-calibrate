@@ -381,7 +381,7 @@ echo ""
 echo "✓ Explorer pod created successfully"
 echo ""
 echo "Waiting for pod to be ready..."
-kubectl wait --for=condition=Ready pod/"$POD_NAME" -n "$NAMESPACE" --timeout=60s
+kubectl wait --for=condition=Ready pod/"$POD_NAME" -n "$NAMESPACE" --timeout=240s
 
 # --- Create and wait for the FileRecoverySession ---
 if [ -n "$RESTORE_POINT_NAME" ]; then
