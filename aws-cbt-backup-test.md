@@ -70,15 +70,16 @@ EOF
 
 Install the snapshot CRDs:
 ```
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
+SNAPSHOTTER_VERSION=v8.2.0
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/${SNAPSHOTTER_VERSION}/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/${SNAPSHOTTER_VERSION}/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/${SNAPSHOTTER_VERSION}/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
 ```
 
 Install the snapshot controller:
 ```
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/master/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/${SNAPSHOTTER_VERSION}/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/${SNAPSHOTTER_VERSION}/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
 ```
 
 Verify the snapshot controller is running:
@@ -88,7 +89,7 @@ kubectl get pods -n kube-system -l app.kubernetes.io/name=snapshot-controller
 
 Create VolumeSnapshotClass:
 ```
-cat <<EOF | kubectl create -f -
+cat <<EOF | kubectl apply -f -
 apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshotClass
 metadata:
@@ -211,7 +212,7 @@ EOF
 Also change the helm configuration to have enough backup and restore time 
 ```
 helm repo update 
-cat<<EOF | helm upgrade k10 -n kasten-io kasten/k10 -f -
+cat <<EOF | helm upgrade k10 -n kasten-io kasten/k10 -f -
 workerPodCRDs:
   enabled: true
 datastore:
@@ -233,5 +234,27 @@ prometheus:
       storageClass: gp2
 EOF
 ```
+
+# Verify CBT with Direct EBS is working
+
+Kasten supports two modes of changed-block tracking:
+
+- **Generic CBT**: Kasten creates a temporary clone PVC from the previous snapshot, mounts it, and scans the entire volume block by block — comparing each block against what was last uploaded to the target location. The full scan is handled by Kasten itself, so it takes time proportional to the volume size.
+
+- **Direct EBS CBT**: Kasten calls the AWS EBS API (`ListChangedBlocks`) which returns the list of changed blocks directly from AWS, by comparing two EBS snapshots server-side. No clone PVC is needed. This is significantly faster because AWS handles the diff computation natively and Kasten only transfers the blocks that actually changed.
+
+The key indicator that **Direct EBS CBT** is truly in use is the **absence of any clone PVC** in the `kasten-io` namespace during a backup run. With generic CBT you would see a temporary PVC appear briefly in `kasten-io`; with Direct EBS CBT that clone never appears.
+
+## How to verify
+
+Trigger a policy run (at least the second one, so a previous snapshot exists), then watch the `kasten-io` namespace for PVCs:
+
+```
+kubectl get pvc -n kasten-io -w
+```
+
+If Direct EBS CBT is active, **no clone PVC will appear** during the export phase. If you do see a PVC created (typically named after the source PVC with a random suffix), Kasten has fallen back to generic CBT — check the annotations on the storage class and PVC, and verify that the infra profile has the required EBS permissions (`ebs:ListSnapshotBlocks`, `ebs:ListChangedBlocks`, `ebs:GetSnapshotBlock`).
+
+The backup size of the second run should also be significantly smaller than the first (only the changed blocks), which is another strong signal that CBT is working correctly.
 
 
