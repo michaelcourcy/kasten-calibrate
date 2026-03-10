@@ -6,9 +6,9 @@ Test a 10 million files 10Tb CBT backup on AWS
 
 ```
 eksctl create cluster \
-  --name trillio-abra-poc \
+  --name mcourcy-cluster \
   --region us-east-1 \
-  --nodegroup-name trillio-abra-poc-workers \
+  --nodegroup-name mcourcy-cluster-workers \
   --node-type m5.2xlarge \
   --nodes 3 \
   --nodes-min 3 \
@@ -17,7 +17,7 @@ eksctl create cluster \
 
 Associate OIDC provider (one-time setup) so that kube sa can assume role
 ```
-eksctl utils associate-iam-oidc-provider --cluster  trillio-abra-poc --approve  --region us-east-1
+eksctl utils associate-iam-oidc-provider --cluster  mcourcy-cluster --approve  --region us-east-1
 ```
 
 Create IAM role for EBS CSI driver (with OIDC) and create also the ebs 
@@ -25,7 +25,7 @@ Create IAM role for EBS CSI driver (with OIDC) and create also the ebs
 eksctl create iamserviceaccount \
   --name ebs-csi-controller-sa \
   --namespace kube-system \
-  --cluster trillio-abra-poc \
+  --cluster mcourcy-cluster \
   --region us-east-1 \
   --role-name AmazonEKS_EBS_CSI_DriverRole \
   --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
@@ -36,7 +36,7 @@ Install the EBS CSI driver addon
 ```
 eksctl create addon \
   --name aws-ebs-csi-driver \
-  --cluster trillio-abra-poc \
+  --cluster mcourcy-cluster \
   --region us-east-1 \
   --service-account-role-arn arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/AmazonEKS_EBS_CSI_DriverRole \
   --force
@@ -44,7 +44,7 @@ eksctl create addon \
 
 Update kube config 
 ```
-aws eks update-kubeconfig --name trillio-abra-poc --region us-east-1
+aws eks update-kubeconfig --name mcourcy-cluster --region us-east-1
 ```
 
 Verify installation 
@@ -104,7 +104,7 @@ EOF
 If later you need to delete the cluster 
 
 ```
-eksctl delete cluster --name trillio-abra-poc --region us-east-1
+eksctl delete cluster --name mcourcy-cluster --region us-east-1
 ```
 
 # Create a node group with high performance node and deploy the big workload
@@ -120,7 +120,7 @@ Let's add 3 instance nodegroup on the cluster
 
 ```
 eksctl create nodegroup \
-  --cluster trillio-abra-poc \
+  --cluster mcourcy-cluster \
   --region us-east-1 \
   --name big-baby \
   --node-type m5.4xlarge \
@@ -236,6 +236,8 @@ EOF
 ```
 
 # Verify CBT with Direct EBS is working
+
+> Direct EBS CBT support is documented in the Kasten Storage Integration page under the [Amazon Elastic Block Storage (EBS) Integration](https://docs.kasten.io/latest/install/storage/#ebs_int) section.
 
 Kasten supports two modes of changed-block tracking:
 
