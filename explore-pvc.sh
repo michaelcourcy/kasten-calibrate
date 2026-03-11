@@ -198,7 +198,28 @@ echo ""
 
 # Pod-level security context
 if [ -n "$USER_ID" ]; then
-    POD_SECURITY_CONTEXT=$(cat <<EOF
+    if [ "$USER_ID" = "0" ]; then
+        POD_SECURITY_CONTEXT=$(cat <<EOF
+  securityContext:
+    fsGroup: 0
+    fsGroupChangePolicy: "OnRootMismatch"
+    runAsNonRoot: false
+    seccompProfile:
+      type: RuntimeDefault
+EOF
+)
+        CONTAINER_SECURITY_CONTEXT=$(cat <<EOF
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsUser: 0
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: false
+EOF
+)
+    else
+        POD_SECURITY_CONTEXT=$(cat <<EOF
   securityContext:
     fsGroup: $USER_ID
     fsGroupChangePolicy: "OnRootMismatch"
@@ -207,7 +228,7 @@ if [ -n "$USER_ID" ]; then
       type: RuntimeDefault
 EOF
 )
-    CONTAINER_SECURITY_CONTEXT=$(cat <<EOF
+        CONTAINER_SECURITY_CONTEXT=$(cat <<EOF
     securityContext:
       allowPrivilegeEscalation: false
       runAsUser: $USER_ID
@@ -217,6 +238,7 @@ EOF
       readOnlyRootFilesystem: false
 EOF
 )
+    fi
 elif [ -n "$RESTORE_POINT_NAME" ]; then
     # fsGroup: 1000 makes the kubelet set the SSH key file's owner to UID 1000,
     # so the non-root container can read it and OpenSSH accepts the 0600 permissions.
