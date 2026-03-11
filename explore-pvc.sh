@@ -6,6 +6,7 @@
 #   -p, --pvc NAME                Name of the PVC to mount (required)
 #   -r, --restore-point NAME      Name of the remote restore point to access via SFTP
 #   -u, --user UID                User ID to run as (sets both runAsUser and fsGroup)
+#   -s, --selinux LEVEL           SELinux level to set (e.g. "s0:c36,c0")
 #   -d, --dry-run                 Display the manifest without applying it
 #   -h, --help                    Show this help message
 
@@ -15,6 +16,7 @@ set -e
 NAMESPACE=""
 PVC_NAME=""
 USER_ID=""
+SELINUX_LEVEL=""
 DRY_RUN=false
 RESTORE_POINT_NAME=""
 
@@ -41,6 +43,7 @@ Options:
     -p, --pvc NAME                Name of the PVC to mount (required)
     -r, --restore-point NAME      Name of the remote restore point to access via SFTP
     -u, --user UID                User ID to run as (sets both runAsUser and fsGroup)
+    -s, --selinux LEVEL           SELinux level to set (e.g. "s0:c36,c0")
     -d, --dry-run                 Display the manifest without applying it
     -h, --help                    Show this help message
 
@@ -53,6 +56,9 @@ Examples:
 
     # Explore a PVC with a specific user ID
     $0 -n test-namespace -p calibrate-data -u 1000
+
+    # Explore a PVC with a SELinux level
+    $0 -n test-namespace -p calibrate-data -s "s0:c36,c0"
 
     # Explore a remote restore point via SFTP
     $0 -n test-namespace -p calibrate-data -r scheduled-5d5clnptxw
@@ -77,6 +83,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -u|--user)
             USER_ID="$2"
+            shift 2
+            ;;
+        -s|--selinux)
+            SELINUX_LEVEL="$2"
             shift 2
             ;;
         -d|--dry-run)
@@ -188,6 +198,9 @@ echo "  PVC:           $PVC_NAME"
 if [ -n "$USER_ID" ]; then
     echo "  User ID:       $USER_ID"
 fi
+if [ -n "$SELINUX_LEVEL" ]; then
+    echo "  SELinux Level: $SELINUX_LEVEL"
+fi
 echo "  Pod name:      $POD_NAME"
 if [ -n "$RESTORE_POINT_NAME" ]; then
     echo "  Restore Point: $RESTORE_POINT_NAME (SFTP mode)"
@@ -195,6 +208,16 @@ fi
 echo ""
 
 # --- Build the pod YAML manifest ---
+
+# Optional SELinux snippet for pod-level security context (leading newline so it
+# appends cleanly after the last field inside the heredoc)
+if [ -n "$SELINUX_LEVEL" ]; then
+    SELINUX_SNIPPET="
+    seLinuxOptions:
+      level: \"$SELINUX_LEVEL\""
+else
+    SELINUX_SNIPPET=""
+fi
 
 # Pod-level security context
 if [ -n "$USER_ID" ]; then
@@ -205,7 +228,7 @@ if [ -n "$USER_ID" ]; then
     fsGroupChangePolicy: "OnRootMismatch"
     runAsNonRoot: false
     seccompProfile:
-      type: RuntimeDefault
+      type: RuntimeDefault$SELINUX_SNIPPET
 EOF
 )
         CONTAINER_SECURITY_CONTEXT=$(cat <<EOF
@@ -225,7 +248,7 @@ EOF
     fsGroupChangePolicy: "OnRootMismatch"
     runAsNonRoot: true
     seccompProfile:
-      type: RuntimeDefault
+      type: RuntimeDefault$SELINUX_SNIPPET
 EOF
 )
         CONTAINER_SECURITY_CONTEXT=$(cat <<EOF
@@ -247,7 +270,7 @@ elif [ -n "$RESTORE_POINT_NAME" ]; then
     fsGroup: 1000
     runAsNonRoot: true
     seccompProfile:
-      type: RuntimeDefault
+      type: RuntimeDefault$SELINUX_SNIPPET
 EOF
 )
     CONTAINER_SECURITY_CONTEXT=$(cat <<EOF
@@ -265,7 +288,7 @@ else
   securityContext:
     runAsNonRoot: true
     seccompProfile:
-      type: RuntimeDefault
+      type: RuntimeDefault$SELINUX_SNIPPET
 EOF
 )
     CONTAINER_SECURITY_CONTEXT=$(cat <<EOF
