@@ -218,6 +218,7 @@ workerPodCRDs:
 datastore:
   parallelBlockDownloads: 32
   parallelBlockUploads: 32
+  cacheSizeLimitMB: 10240
 timeout:
   blueprintBackup: 8000
   blueprintRestore: 8000
