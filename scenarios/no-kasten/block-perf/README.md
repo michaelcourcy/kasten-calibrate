@@ -62,8 +62,15 @@ privileged so it can open the raw block device under OpenShift SCC.
 - Block-mode pods need the **privileged SCC**; the script runs
   `oc adm policy add-scc-to-user privileged -z default -n <ns>` automatically
   when `oc` is available.
-- The `VolumeSnapshotClass` is auto-detected (default class, else the first
-  available); override with `--snapshot-class`.
+- The `VolumeSnapshotClass` is auto-detected (default class, else one whose
+  driver matches the storage class provisioner); override with `--snapshot-class`.
+- **Single-node mode (`-N/--node <name>`):** pins every workload deployment and
+  reader pod to one named node via `nodeSelector: kubernetes.io/hostname`. With
+  `managed-csi` (Azure Disk, `ReadWriteOnce`) the disk attaches to whichever node
+  runs the pod, so pinning the pods keeps the whole scenario — data generation,
+  clones, and reads — on a single node and gives a clean single-node throughput
+  baseline with no cross-node/cross-zone effects. The node name is validated up
+  front. Omit it to let the scheduler place pods.
 
 ## Usage
 
@@ -73,6 +80,9 @@ privileged so it can open the raw block device under OpenShift SCC.
 
 # Customize
 ./block-perf.sh --count 4 -f 10 -s 5120 -c managed-csi -n block-perf
+
+# Pin the whole scenario to a single node (single-node baseline)
+./block-perf.sh --node kasten-se-lab-njn6j-worker-eastus1-qfq28
 
 # Run a single phase
 ./block-perf.sh workload
@@ -86,7 +96,8 @@ privileged so it can open the raw block device under OpenShift SCC.
 ```
 
 Options: `-n/--namespace`, `-c/--storage-class`, `--snapshot-class`, `--count`,
-`-f/--files`, `-s/--size`, `--chunk`, `--gen-timeout`. See `./block-perf.sh -h`.
+`-f/--files`, `-s/--size`, `--chunk`, `-N/--node`, `--gen-timeout`. See
+`./block-perf.sh -h`.
 
 ## Watching it run
 
@@ -103,6 +114,11 @@ raw block read baseline for cloned-from-snapshot volumes.
 
 - **Capacity:** with defaults this needs ~8 × 76 Gi ≈ **600 Gi** of provisioned
   block storage (4 originals + 4 clones). Adjust `--count` / `-f` / `-s` to fit.
+- **Single-node disk limit:** with `--node` and `--count 4`, all **8 RWO disks
+  attach to the same node at once** (4 workload + 4 clones). Make sure the node's
+  VM type allows that many data disks (Azure VMs cap max data disks by size); if
+  not, lower `--count`. The fix also assumes the chosen node can fit the workload
+  pods' CPU/memory requests (1 CPU + 1Gi each).
 - **Generation time dominates:** writing ~200 GB from `/dev/urandom` across 4
   PVCs can take a long time; the `workload` phase polls until done.
 - Snapshots are taken while the workload is live (the originals stay mounted),

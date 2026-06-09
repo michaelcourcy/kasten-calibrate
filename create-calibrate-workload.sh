@@ -17,6 +17,7 @@ FILE_SIZE_KB=""
 BLOCK_MODE=false
 STORAGE_CLASS=""
 DRY_RUN=false
+NODE=""
 
 # Function to show usage
 usage() {
@@ -29,6 +30,9 @@ Options:
     -s, --size SIZE             Size of each file in KB
     -b, --block-mode            Use block mode for PVC (default: false)
     -c, --storage-class CLASS   Storage class for PVC (default: cluster default)
+    -N, --node NAME             Pin the workload pod to this node (nodeSelector
+                                kubernetes.io/hostname); ensures the PVC binds in
+                                that node's zone (default: scheduler decides)
     -d, --dry-run               Display the manifest without applying it
     -h, --help                  Show this help message
 
@@ -66,6 +70,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -c|--storage-class)
             STORAGE_CLASS="$2"
+            shift 2
+            ;;
+        -N|--node)
+            NODE="$2"
             shift 2
             ;;
         -d|--dry-run)
@@ -147,6 +155,9 @@ echo "  Namespace: $NAMESPACE"
 echo "  Total files: $TOTAL_FILES (${FILES_THOUSANDS}k)"
 echo "  File size: ${FILE_SIZE_KB}KB"
 echo "  Block mode: $BLOCK_MODE"
+if [ -n "$NODE" ]; then
+    echo "  Node (pinned): $NODE"
+fi
 if [ -n "$STORAGE_CLASS" ]; then
     echo "  Storage class: $STORAGE_CLASS"
 else
@@ -163,6 +174,13 @@ if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
     kubectl create namespace "$NAMESPACE"
 else
     echo "Namespace $NAMESPACE already exists"
+fi
+
+# Optional node pinning for the pod template (kept empty -> blank line, valid YAML)
+POD_NODE_SELECTOR=""
+if [ -n "$NODE" ]; then
+    POD_NODE_SELECTOR="      nodeSelector:
+        kubernetes.io/hostname: $NODE"
 fi
 
 # Generate the YAML manifest
@@ -184,6 +202,7 @@ spec:
       labels:
         app: $WORKLOAD_NAME
     spec:
+$POD_NODE_SELECTOR
       containers:
       - command:
         - sh

@@ -26,6 +26,7 @@ COUNT=4                         # number of PVCs (and clones, and readers)
 FILES_THOUSANDS=10              # 10 -> 10,000 files
 FILE_SIZE_KB=5120               # 5120 KB -> 5 MB per file
 CHUNK_BYTES=524288              # 512 KB read chunk for the hasher
+NODE=""                         # pin all pods to this node (empty = scheduler decides)
 READER_IMAGE="docker.io/ubuntu:latest"   # has dd, blockdev, sha256sum
 GEN_TIMEOUT=0                   # seconds to wait for file generation (0 = forever)
 SNAP_TIMEOUT=900                # seconds to wait for a snapshot to be ready
@@ -58,6 +59,9 @@ Options:
     -f, --files N              Files in thousands per PVC (default: $FILES_THOUSANDS)
     -s, --size KB              File size in KB (default: $FILE_SIZE_KB)
         --chunk BYTES          Reader chunk size in bytes (default: $CHUNK_BYTES)
+    -N, --node NAME            Pin all workload and reader pods to this node, so
+                               the whole scenario (data, clones, reads) runs on a
+                               single node (default: scheduler decides)
         --gen-timeout SEC      Wait limit for generation, 0=forever (default: $GEN_TIMEOUT)
     -h, --help                 Show this help
 
@@ -84,6 +88,7 @@ while [[ $# -gt 0 ]]; do
         -f|--files)          FILES_THOUSANDS="$2"; shift 2;;
         -s|--size)           FILE_SIZE_KB="$2"; shift 2;;
         --chunk)             CHUNK_BYTES="$2"; shift 2;;
+        -N|--node)           NODE="$2"; shift 2;;
         --gen-timeout)       GEN_TIMEOUT="$2"; shift 2;;
         -h|--help)           usage;;
         all|workload|snapshot|clone|read|status|cleanup)
@@ -97,7 +102,19 @@ DEPLOY_PREFIX="workload-${PVC_PREFIX}"
 
 # ---- helpers --------------------------------------------------------------
 
+# Fail early if a node was requested but does not exist.
+validate_node() {
+    [ -z "$NODE" ] && return
+    if ! kubectl get node "$NODE" &> /dev/null; then
+        echo "Error: node '$NODE' not found. Available nodes:"
+        kubectl get nodes -o name | sed 's#node/#  #'
+        exit 1
+    fi
+    echo "Pinning all pods to node: $NODE"
+}
+
 ensure_namespace() {
+    validate_node
     if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
         echo "Creating dedicated namespace: $NAMESPACE"
         kubectl create namespace "$NAMESPACE"
@@ -157,6 +174,11 @@ phase_workload() {
     ensure_namespace
     echo ""
     echo "=== Phase 1: creating $COUNT block-mode workload PVCs ==="
+    # Pin at creation so the WaitForFirstConsumer PVC provisions in the node's
+    # zone -- patching after the fact races the scheduler and can bind the disk
+    # in the wrong zone.
+    local node_arg=()
+    [ -n "$NODE" ] && node_arg=(-N "$NODE")
     for n in $(seq 1 "$COUNT"); do
         echo "--- workload $n/$COUNT ---"
         "$WORKLOAD_SCRIPT" \
@@ -164,7 +186,7 @@ phase_workload() {
             -f "$FILES_THOUSANDS" \
             -s "$FILE_SIZE_KB" \
             -c "$STORAGE_CLASS" \
-            -b
+            -b "${node_arg[@]}"
     done
 
     echo ""
@@ -271,10 +293,18 @@ phase_clone() {
 
 # ---- phase: read ----------------------------------------------------------
 phase_read() {
+    validate_node
     echo ""
     echo "=== Phase 4: launching reader pods (raw 512KB chunk hashing) ==="
     local pvcs; pvcs=$(src_pvcs)
     [ -z "$pvcs" ] && { echo "No source PVCs found. Run 'workload' first."; exit 1; }
+
+    # optional node pinning, injected into the pod spec
+    local node_selector_yaml=""
+    if [ -n "$NODE" ]; then
+        node_selector_yaml="  nodeSelector:
+    kubernetes.io/hostname: $NODE"
+    fi
 
     for pvc in $pvcs; do
         local clone="clone-${pvc}" pod="reader-${pvc}"
@@ -291,6 +321,7 @@ metadata:
     role: reader
 spec:
   restartPolicy: Never
+$node_selector_yaml
   containers:
   - name: reader
     image: $READER_IMAGE
