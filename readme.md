@@ -155,13 +155,21 @@ Workloads are automatically named based on parameters:
 
 ## Storage Calculation
 
-Storage is automatically calculated with 1.5× overhead:
-- Formula: `(files × size × 1.5) / 1024 MB`
-- Minimum: 10Gi
+Storage is the larger of two budgets, minimum 10Gi:
+- Data: `files × size × 1.5` (block rounding and metadata)
+- Inodes: `files × 16 KiB × 1.05` — `mkfs.ext4` creates one inode per 16 KiB of
+  filesystem by default, so for files smaller than ~16 KiB the inode budget is the
+  binding one. Without it a 74Gi volume has 4,849,664 inodes for 5,000,000 files: the
+  pod dies with `No space left on device` while `df` shows blocks at 77 %, and each
+  restart regenerates the data — a 100 % change rate for every backup.
 - Examples:
-  - 10k files × 10KB = ~10Gi
-  - 100k files × 500KB = ~74Gi
-  - 5M files × 10KB = ~74Gi
+  - 10k files × 10KB = 10Gi
+  - 100k files × 500KB = 74Gi (data-bound)
+  - 5M files × 10KB = 81Gi (inode-bound; 74Gi from the data alone)
+  - 1M files × 1KB = 17Gi (inode-bound)
+
+Generation is resumable: files that already exist are skipped, so a pod restart before
+the `initial` marker continues where it stopped instead of rewriting everything.
 
 ## Monitoring Workloads
 
