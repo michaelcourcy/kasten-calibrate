@@ -120,8 +120,20 @@ INNER_LOOP_COUNT=$((TOTAL_FILES / OUTER_LOOPS))
 CHURN_OUTER_LOOPS=1
 CHURN_INNER_LOOP_COUNT=$INNER_LOOP_COUNT
 
-# Calculate storage size needed (files * size * 1.5 for overhead)
-STORAGE_GB=$(( (FILES_THOUSANDS * FILE_SIZE_KB * 15) / (10 * 1024) + 1 ))
+# Calculate storage size needed: the larger of two budgets.
+#  - data: files * size * 1.5 (block rounding and metadata)
+#  - inodes: mkfs.ext4 creates one inode per 16 KiB of filesystem by default, so a
+#    filesystem sized for the data alone runs out of inodes when files are smaller than
+#    ~16 KiB (74 GiB = 4,849,664 inodes, short of 5,000,000 files - the pod then dies
+#    with "No space left on device" while df shows blocks 77 % used). +5 % for
+#    directories and the reserved inodes.
+DATA_GB=$(( (FILES_THOUSANDS * FILE_SIZE_KB * 15) / (10 * 1024) + 1 ))
+INODE_GB=$(( TOTAL_FILES * 16 * 105 / 100 / (1024 * 1024) + 1 ))
+if [ $DATA_GB -ge $INODE_GB ]; then
+    STORAGE_GB=$DATA_GB
+else
+    STORAGE_GB=$INODE_GB
+fi
 if [ $STORAGE_GB -lt 10 ]; then
     STORAGE_GB=10
 fi
@@ -166,7 +178,7 @@ fi
 echo "  Files per version: $INNER_LOOP_COUNT"
 echo "  Total versions: $OUTER_LOOPS (v1-v${OUTER_LOOPS})"
 echo "  Churning files: $CHURN_INNER_LOOP_COUNT (version v1 - 20% churn rate)"
-echo "  Storage size: ${STORAGE_GB}Gi"
+echo "  Storage size: ${STORAGE_GB}Gi (data budget ${DATA_GB}Gi, inode budget ${INODE_GB}Gi)"
 
 # Create namespace if it doesn't exist
 if ! kubectl get namespace "$NAMESPACE" &> /dev/null; then
@@ -238,10 +250,11 @@ MANIFEST+=$(cat <<EOF
             date > generation_start_time
             for j in \$(seq 1 $OUTER_LOOPS)
             do 
-              for i in \$(seq 1 $INNER_LOOP_COUNT); do dd if=/dev/urandom of=\$i.v\$j.bin bs=${FILE_SIZE_KB}K count=1; echo "created \$i.v\$j.bin"; done
+              for i in \$(seq 1 $INNER_LOOP_COUNT); do [ -s \$i.v\$j.bin ] && continue; dd if=/dev/urandom of=\$i.v\$j.bin bs=${FILE_SIZE_KB}K count=1; echo "created \$i.v\$j.bin"; done
             done
-            # all the initial filesystem is created we mark it
-            # by creating an initial file if the pod restart it won't try to 
+            # all the initial filesystem is created we mark it by creating an initial file;
+            # a restart before that point resumes (existing files are skipped) instead of
+            # rewriting everything, which would look like a 100 % change rate to the backup
             echo "Completed initial filesystem generation at \$(date)"
             date > generation_end_time
             touch initial
